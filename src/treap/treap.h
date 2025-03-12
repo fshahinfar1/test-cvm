@@ -15,13 +15,22 @@
 #define __always_inline __attribute__((always_inline))
 #endif
 
-#define KEY_SIZE 4
-#define TREAP_MAX_SIZE 128
-// the max height is used to make while loops, ... bounded
-#define TREAP_MAX_HEIGHT 32
 
+#ifndef TREAP_MAX_SIZE
+#define TREAP_MAX_SIZE 128
+#endif
+
+#ifndef TREAP_MAX_HEIGHT
+// the max height is used to make while loops, ... bounded
+#define TREAP_MAX_HEIGHT 16
+#endif
+
+// user can define its own key by defining the key size and following functions
+// and struct (NOTE: it looks ugly do something better later)
+#ifndef TREAP_KEY_SIZE
+#define TREAP_KEY_SIZE 4
 struct treap_key {
-	uint8_t data[KEY_SIZE];
+	uint8_t data[TREAP_KEY_SIZE];
 } __packed;
 
 static __always_inline
@@ -35,6 +44,7 @@ int treap_key_eq(struct treap_key *a, struct treap_key *b)
 {
 	return *((uint32_t *)&a->data) == *((uint32_t *)&b->data);
 }
+#endif
 
 struct treap_node {
 	struct treap_key key;
@@ -70,33 +80,51 @@ struct treap_node *treap_top(struct treap *t) {
 	return t->root;
 }
 
-/* fint the node with the given key
- * */
-struct treap_node *treap_find(struct treap *t, struct treap_key *key)
+static void __treap_find(struct treap *t, struct treap_key *key,
+		struct treap_node **node_out,
+		struct treap_node ***node_parent_link)
 {
+	*node_out = NULL;
+	*node_parent_link = NULL;
+
 	struct treap_node *ptr = t->root;
+	struct treap_node **link = &t->root;
 	uint32_t k;
 	for (k = 0; k < TREAP_MAX_HEIGHT; k++) {
 		if (ptr == NULL) {
 			// key does not exists in the treap (or there is a bug in
 			// implementation of the treap)
-			return NULL;
+			return;
 		}
 		// TODO: maybe I could optimize it with having only one comparison
 		if (treap_key_less_than(key, &ptr->key)) {
 			// less
+			link = &ptr->left;
 			ptr = ptr->left;
 		} else {
 			// greater or equal
 			if (treap_key_eq(key, &ptr->key)) {
 				// found it
-				return ptr;
+				*node_parent_link = link;
+				*node_out = ptr;
+				return;
 			}
+			link = &ptr->right;
 			ptr = ptr->right;
 		}
 	}
 	// did not found the result in the bounded height
-	return NULL;
+	return;
+}
+
+/* fint the node with the given key
+ * */
+struct treap_node *treap_find(struct treap *t, struct treap_key *key)
+{
+	struct treap_node *n;
+	struct treap_node **link;
+	__treap_find(t, key, &n, &link);
+	return n;
 }
 
 enum ROTATE_DIR {
@@ -224,6 +252,90 @@ int treap_insert(struct treap *t, struct treap_key *k, uint32_t priority)
 				// do a left rotation rooted at parent
 				__rotate(grand_p_link, LEFT);
 			}
+		}
+	}
+	return 0;
+}
+
+struct treap_node *__get_imidiate_succesor(struct treap_node *n,
+		struct treap_node ***out_link)
+{
+	if (n->right == NULL)
+		return NULL;
+	struct treap_node *leaf = n->right;
+	struct treap_node **link = &n->right;
+	for (uint32_t k = 0; k < TREAP_MAX_HEIGHT; k++) {
+		if (leaf->left == NULL)
+			break;
+		link = &leaf->left;
+		leaf = leaf->left;
+	}
+	*out_link = link;
+	return leaf;
+}
+
+// Bubble down the node fixing the heap property
+void __fix_sub_tree_heap_property_down(struct treap_node *ptr, struct treap_node **ptr_link)
+{
+	// we do not need to update the ptr, the ptr is the node we want to
+	// buble down.
+	for (int k = 0; k < TREAP_MAX_HEIGHT; k++) {
+		if ((ptr->right != NULL) &&
+				(ptr->priority < ptr->right->priority)) {
+			__rotate(ptr_link, LEFT);
+			ptr_link = &(*ptr_link)->left;
+		} else if ((ptr->left != NULL) &&
+				(ptr->priority < ptr->left->priority)) {
+			__rotate(ptr_link, RIGHT);
+			ptr_link = &(*ptr_link)->right;
+		} else {
+			// everything is good
+			break;
+		}
+	}
+}
+
+int treap_delete(struct treap *t, struct treap_key *key)
+{
+	struct treap_node *n;
+	struct treap_node **link;
+	__treap_find(t, key, &n, &link);
+	if (n == NULL) {
+		// key does not exist
+		return -1;
+	}
+	if (n->left == NULL) {
+		if (n->right == NULL) {
+			// it is a leaf, just remove the node
+			*link = NULL;
+		} else {
+			// has one child (the right child)
+			*link = n->right;
+		}
+	} else {
+		// has left child
+		if (n->right == NULL) {
+			// has one child (the left child)
+			*link = n->left;
+		} else {
+			// We need to move the node down, find the imidiate
+			// successor (the left most left node of the right
+			// sub-tree)
+			struct treap_node **leaf_link = NULL;
+			struct treap_node *leaf = __get_imidiate_succesor(n, &leaf_link);
+			// swap the node with the leaf and then remove the node
+			// .. we know leaf does not have a left, if it does not
+			// have a right then just remove the node. if it has a
+			// right child then put the right child in place of
+			// leaf.
+			*leaf_link = leaf->right;
+			leaf->right = n->right;
+			leaf->left = n->left;
+			*link = leaf;
+			// node has been removed and everything is almost okay
+			// except that moving leaf to the nodes position may
+			// have disturbed the heap property
+			__fix_sub_tree_heap_property_down(leaf, link);
 		}
 	}
 	return 0;
