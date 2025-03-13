@@ -56,7 +56,8 @@ struct treap_node {
 struct treap {
 	struct treap_node *root;
 	struct treap_node nodes[TREAP_MAX_SIZE];
-	uint32_t used;
+	uint32_t used; // number of nodes in the treap --> Top of the stack (TREAP_MAX_SIZE - used - 1)
+	struct treap_node *stack[TREAP_MAX_SIZE]; // stack of free nodes
 };
 
 struct treap *treap_new(void)
@@ -66,6 +67,8 @@ struct treap *treap_new(void)
 	struct treap *t = calloc(1, sizeof(struct treap));
 	if (t == NULL)
 		return NULL;
+	for (uint32_t k = 0; k < TREAP_MAX_SIZE; k++)
+		t->stack[TREAP_MAX_SIZE - k - 1] = &t->nodes[k];
 	return t;
 }
 
@@ -185,13 +188,40 @@ void __rotate(struct treap_node **link, enum ROTATE_DIR dir)
 	}
 }
 
+static __always_inline
+struct treap_node * __treap_alloc_node(struct treap *t)
+{
+	if (t->used >= TREAP_MAX_SIZE) {
+		// pool of nodes has been exausted
+		return NULL;
+	}
+	uint32_t top_stack = TREAP_MAX_SIZE - t->used -1;
+	t->used++;
+	return t->stack[top_stack];
+}
+
+static __always_inline
+void __treap_free_node(struct treap *t, struct treap_node *n)
+{
+	// NOTE: we are not checking if the give node is actually valid pointer.
+	// Becareful!
+	if (t->used <= 0) {
+		// Something is very wrong
+		return;
+	}
+
+	t->used--;
+	uint32_t top_stack = TREAP_MAX_SIZE - t->used - 1;
+	t->stack[top_stack] = n;
+}
+
 int treap_insert(struct treap *t, struct treap_key *k, uint32_t priority)
 {
-	if (t->used >= TREAP_MAX_SIZE)
-		return -1;
-
 	// get a node
-	struct treap_node *n = &t->nodes[t->used++];
+	struct treap_node *n = __treap_alloc_node(t);
+	if (n == NULL) {
+		return -ENOSPC;
+	}
 	memcpy(&n->key, k, sizeof(struct treap_key));
 	n->priority = priority;
 
@@ -216,7 +246,7 @@ int treap_insert(struct treap *t, struct treap_key *k, uint32_t priority)
 		}
 	}
 	// did not found the empty space in the bounded height
-	if (i >= TREAP_MAX_SIZE) {
+	if (i >= TREAP_MAX_HEIGHT) {
 		t->used--; // free the node we reserved
 		return -ENOSPC;
 	}
@@ -232,7 +262,7 @@ int treap_insert(struct treap *t, struct treap_key *k, uint32_t priority)
 
 	int parent_index = i;
 	for (uint32_t k = 0; k < TREAP_MAX_HEIGHT; k++) {
-		if (parent_index < 0) {
+		if (parent_index <= 0) {
 			// we reached the root (rotate the node to the root)
 			break;
 		}
@@ -338,5 +368,8 @@ int treap_delete(struct treap *t, struct treap_key *key)
 			__fix_sub_tree_heap_property_down(leaf, link);
 		}
 	}
+
+	// return the node to the stack of free nodes :)
+	__treap_free_node(t, n);
 	return 0;
 }

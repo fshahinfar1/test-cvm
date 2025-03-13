@@ -8,6 +8,9 @@ CFLAGS = -O3 -g
 default: $(binary)
 	./build/test
 
+clean:
+	rm -r $(build_dir)
+
 $(binary): test.c treap_test.h ../treap.h
 	if [ ! -d $(build_dir) ]; then mkdir -p $(build_dir); fi
 	$(CC) $(CFLAGS) -o $@ test.c $(LDFLAGS)

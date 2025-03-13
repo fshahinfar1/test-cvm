@@ -11,6 +11,7 @@
 
 bool test_basic(void)
 {
+	int ret;
 	struct treap_key K = {};
 	struct treap *t = treap_new();
 	ASSERT(t != NULL, "failed to allocate a treap");
@@ -58,14 +59,64 @@ bool test_basic(void)
 	ASSERT(rr->right == NULL, "the right child should be null");
 	ASSERT(root->right == right, "The right child should correctly be moved with root after rotations");
 
+	*(uint32_t *)(&K.data) = 322;
+	treap_insert(t, &K, 37);
+
 	// check the inorder walk
-	int expected_arr[] = {100,38,50,120};
+	int expected_arr[8];
+	memcpy(expected_arr , ((int[]){100,38,50,37,120}), 5*sizeof(int));
 	int *arr; uint32_t arr_sz;
 	treap_report_priority_in_order(t, &arr, &arr_sz);
-	ASSERT(arr_sz == 4, "there should be 4 nodes");
+	ASSERT(arr_sz == 5, "number of nodes are wrong");
 	for (int k = 0; k < arr_sz; k++) {
 		ASSERT(expected_arr[k] == arr[k], "issue in order of nodes");
 	}
+	free(arr);
+
+
+	// test deleting a node that does not exists
+	*(uint32_t*)(&K.data) = 111;
+	ret = treap_delete(t, &K);
+	ASSERT(ret == -1, "treap_delete should have failed");
+
+	// test deleting a node (the current root is being removed)
+	*(uint32_t*)(&K.data) = 321;
+	ret = treap_delete(t, &K);
+	ASSERT(ret == 0, "treap_delete failed");
+
+	treap_report_priority_in_order(t, &arr, &arr_sz);
+	ASSERT(arr_sz == 4, "number of nodes are wrong");
+	memcpy(expected_arr , ((int[]){100,38,37,120}), 4*sizeof(int));
+	for (int k = 0; k < arr_sz; k++) {
+		ASSERT(expected_arr[k] == arr[k], "issue in order of nodes");
+	}
+	free(arr);
+
+	ASSERT(t->root->right == NULL, "[missing description]");
+	ASSERT(*(uint32_t *)t->root->key.data == 512, "[missing description]");
+	ASSERT(t->root->left != NULL,"[missing description]");
+	ASSERT(*(uint32_t *)t->root->left->key.data == 123, "[missing description]");
+	ASSERT(t->root->left->left == NULL,"[missing description]");
+	ASSERT(t->root->left->right != NULL,"[missing description]");
+	ASSERT(*(uint32_t *)t->root->left->right->key.data == 200, "[missing description]");
+	ASSERT(t->root->left->right->left == NULL,"[missing description]");
+	ASSERT(t->root->left->right->right != NULL,"[missing description]");
+	ASSERT(*(uint32_t *)t->root->left->right->right->key.data == 322, "[missing description]");
+
+	//
+	*(uint32_t*)(&K.data) = 512;
+	ret = treap_delete(t, &K);
+	ASSERT(ret == 0, "treap_delete failed");
+	*(uint32_t*)(&K.data) = 200;
+	ret = treap_delete(t, &K);
+	ASSERT(ret == 0, "treap_delete failed");
+	*(uint32_t*)(&K.data) = 123;
+	ret = treap_delete(t, &K);
+	ASSERT(ret == 0, "treap_delete failed");
+	*(uint32_t*)(&K.data) = 322;
+	ret = treap_delete(t, &K);
+	ASSERT(ret == 0, "treap_delete failed");
+	ASSERT(t->used == 0, "treap should be empty now");
 
 	treap_destroy(t);
 	return true; // pass
