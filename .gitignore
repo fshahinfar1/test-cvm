@@ -5,3 +5,5 @@ build/
 *.w
 tags
 tags.*
+perf.data
+perf.data.old

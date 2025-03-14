@@ -1,7 +1,7 @@
 build_dir = ./build
 binary = $(build_dir)/main
 
-CFLAGS = -O3 -g
+CFLAGS = -O3 -g -Wall
 
 .PHONY: default
 default: $(binary)

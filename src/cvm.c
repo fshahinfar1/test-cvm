@@ -11,10 +11,9 @@
 #include <time.h>
 
 // The buffer size we want to use for CVM (|B| in the Knuth's CVM paper)
-#define TREAP_MAX_SIZE 128
+#define TREAP_MAX_SIZE (1 << 10)
 #define TREAP_MAX_HEIGHT 32
 
-#include "treap/test/treap_test.h"
 #include "treap/treap.h"
 #include "fixed_point/fp.h"
 
@@ -58,9 +57,9 @@ int main(int argc, char *argv[])
 
 		// if we have the element in the buffer, remove it
 		ret = treap_delete(cvm->t, &key);
-		if (ret == 0) {
-			printf("delete key: %d\n", *(uint32_t *)key.data);
-		}
+		/* if (ret == 0) { */
+		/* 	printf("delete key: %d\n", *(uint32_t *)key.data); */
+		/* } */
 		fp_t u = fp_random();
 		/* printf("rand: %f | %f\n", fp_to_float(u), 1/fp_to_float(u)); */
 		if (u >= cvm->p)
@@ -88,15 +87,10 @@ int main(int argc, char *argv[])
 
 			ret = treap_delete(cvm->t, &top->key);
 			assert(ret == 0);
-			if(!treap_valid(cvm->t->root)) {
-				assert(0);
-			}
-
 			ret = treap_insert(cvm->t, &key, u);
 			if (ret == -2)
 				printf("height issue: %d\n", ret);
 			assert(ret == 0);
-			assert(treap_valid(cvm->t->root) == 1);
 		}
 	}
 	printf("|B|: %d   p: %f\n", cvm->t->used, fp_to_float(cvm->p));
