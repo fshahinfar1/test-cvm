@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
-#include <rand.h>
+#include <stdlib.h>
+#include <assert.h>
 
 // unsigned fix point arithmetic
 
@@ -8,25 +9,31 @@ typedef uint32_t fp_t;
 typedef uint64_t  __fp_d_t;
 
 #define FIX_FRACTION_BITS 31
-#define FIX_SCALE (1 << FIX_FRACTION_BITS)
-#define FP_ONE FIX_SCALE
+#define FP_SCALE (1LL << FIX_FRACTION_BITS)
+#define FP_FRACTION_MASK ((FP_SCALE) - 1)
+#define FP_MAX_FRACTION_VALUE ((double)(0.9999999997671694))
+#define FP_ONE FP_SCALE
 
-fp_t fp_add(fp_t a, fp_t b) {
+fp_t fp_add(fp_t a, fp_t b)
+{
 	return a + b;
 }
 
-fp_t fp_sub(fp_t a, fp_t b) {
+fp_t fp_sub(fp_t a, fp_t b)
+{
 	return a - b;
 }
 
-fp_t fp_mul(fp_t a, fp_t b) {
+fp_t fp_mul(fp_t a, fp_t b)
+{
 	// Use 64-bit intermediate to prevent overflow
 	fp_t product = ( __fp_d_t)a * ( __fp_d_t)b;
 	// Scale back to the correct fixed-point format
 	return (fp_t)(product >> FIX_FRACTION_BITS);
 }
 
-fp_t fp_div(fp_t a, fp_t b) {
+fp_t fp_div(fp_t a, fp_t b)
+{
 	// Scale numerator to maintain precision
 	__fp_d_t numerator = (__fp_d_t)a << FIX_FRACTION_BITS;
 
@@ -34,26 +41,24 @@ fp_t fp_div(fp_t a, fp_t b) {
 	return (fp_t)(numerator / b);
 }
 
-uint64_t fp_recerpical_to_uint(fp_t a) {
-	const __fp_d_t numerator = ((__fp_d_t)FP_ONE) << FIX_FRACTION_BITS;
-	__fp_d_t denumerator = a << FIX_FRACTION_BITS;
-	return (uint64_t)(numerator / denumerator);
+fp_t fp_from_float(float val)
+{
+	// TODO: to be implemented
+	assert(0);
+	return -1;
 }
 
-// Convert integer to fixed-point
-fp_t fp_from_int(int32_t integer) {
-	return integer << FIX_FRACTION_BITS;
+double fp_to_float(fp_t val)
+{
+	__fp_d_t tmp = (__fp_d_t)val;
+	return (double)(tmp) / (double)FP_SCALE;
 }
 
-// Convert fixed-point to integer (truncates fractional part)
-int32_t fix16_to_int(fp_t fixed) {
-	return fixed >> FIX_FRACTION_BITS;
-}
-
-fp_t fp_random(void) {
+fp_t fp_random(void)
+{
 	// get a uniform random number [0, 1)
 	int32_t x = rand();
-	x &= (~FP_ONE); // make sure the integer part is zero
+	x &= FP_FRACTION_MASK; // make sure the integer part is zero
 	return x;
 }
 
