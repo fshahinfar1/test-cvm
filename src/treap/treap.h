@@ -6,6 +6,7 @@
  * */
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -197,7 +198,10 @@ struct treap_node * __treap_alloc_node(struct treap *t)
 	}
 	uint32_t top_stack = TREAP_MAX_SIZE - t->used -1;
 	t->used++;
-	return t->stack[top_stack];
+	struct treap_node *new = t->stack[top_stack];
+	// initialize
+	new->left = new->right = NULL;
+	return new;
 }
 
 static __always_inline
@@ -247,8 +251,9 @@ int treap_insert(struct treap *t, struct treap_key *k, uint32_t priority)
 	}
 	// did not found the empty space in the bounded height
 	if (i >= TREAP_MAX_HEIGHT) {
+		printf("%d > %d\n", i, TREAP_MAX_HEIGHT);
 		t->used--; // free the node we reserved
-		return -ENOSPC;
+		return -2;
 	}
 
 	// assign the node to the empty place we found
@@ -290,43 +295,118 @@ int treap_insert(struct treap *t, struct treap_key *k, uint32_t priority)
 struct treap_node *__get_imidiate_succesor(struct treap_node *n,
 		struct treap_node ***out_link)
 {
-	if (n->right == NULL)
-		return NULL;
 	struct treap_node *leaf = n->right;
 	struct treap_node **link = &n->right;
-	for (uint32_t k = 0; k < TREAP_MAX_HEIGHT; k++) {
+	uint32_t k;
+	if (n->right == NULL)
+		return NULL;
+	for (k = 0; k < TREAP_MAX_HEIGHT; k++) {
 		if (leaf->left == NULL)
 			break;
 		link = &leaf->left;
 		leaf = leaf->left;
+	}
+	if (k >= TREAP_MAX_HEIGHT) {
+		// failed to do it in a bounded size
+		return NULL;
 	}
 	*out_link = link;
 	return leaf;
 }
 
 // Bubble down the node fixing the heap property
-void __fix_sub_tree_heap_property_down(struct treap_node *ptr, struct treap_node **ptr_link)
+int __fix_sub_tree_heap_property_down(struct treap_node *ptr, struct treap_node **ptr_link)
 {
+	// The state of the treap is as follows:
+	//   * the binary search property is valid
+	//   * the heap property is possiblly not, because we moved replace a node
+	//     with its next successor
+
+	// How to fix the heap property ?
+	// Each left and right sub-tree of replaced node are valid treaps.
+	// 1. If the node priority is more than both, we are good
+	// 2. Otherwise, rotate the node toward the sub-tree with lower priority
+	//    e.g., if the priority for the top of sub-tree is 5 and for the right is 8, we rotate left.
+	// 3. Goto 1! [Repeat until we exit at step 1].
+
+	// Why it works? at each rotation, the node with higher priority will
+	// bubble up ... (not 100% sure actually)
+
+
+	uint32_t p = ptr->priority;
+	uint32_t k;
 	// we do not need to update the ptr, the ptr is the node we want to
 	// buble down.
-	for (int k = 0; k < TREAP_MAX_HEIGHT; k++) {
-		if ((ptr->right != NULL) &&
-				(ptr->priority < ptr->right->priority)) {
-			__rotate(ptr_link, LEFT);
-			ptr_link = &(*ptr_link)->left;
-		} else if ((ptr->left != NULL) &&
-				(ptr->priority < ptr->left->priority)) {
-			__rotate(ptr_link, RIGHT);
-			ptr_link = &(*ptr_link)->right;
+	for (k = 0; k < TREAP_MAX_HEIGHT; k++) {
+		uint32_t left_p, right_p;
+		if (ptr->left == NULL) {
+			if (ptr->right == NULL) {
+				// we are good
+				break;
+			} else if (p >= ptr->right->priority) {
+				// we are good
+				break;
+			} else {
+					__rotate(ptr_link, LEFT);
+					ptr_link = &((*ptr_link)->left);
+			}
+		} else if (ptr->right == NULL) {
+			// NOTE: we know the left is not null
+			left_p = ptr->left->priority;
+			if (p >= ptr->left->priority) {
+				// we are good
+				break;
+			} else {
+					__rotate(ptr_link, RIGHT);
+					ptr_link = &((*ptr_link)->right);
+			}
 		} else {
-			// everything is good
-			break;
+			left_p = ptr->left->priority;
+			right_p = ptr->right->priority;
+			if (p >= left_p) {
+				if (p >= right_p) {
+					// we are good
+					break;
+				} else {
+					// right_p > left_p --> rotate to the side with lower priority (LEFT)
+					__rotate(ptr_link, LEFT);
+					ptr_link = &((*ptr_link)->left);
+				}
+			} else {
+				// left_p > p
+				if (left_p <= right_p) {
+					__rotate(ptr_link, LEFT);
+					ptr_link = &((*ptr_link)->left);
+				} else {
+					__rotate(ptr_link, RIGHT);
+					ptr_link = &((*ptr_link)->right);
+				}
+			}
 		}
+
+		/* if ((ptr->right != NULL) && */
+		/* 		(ptr->priority < ptr->right->priority)) { */
+		/* 	__rotate(ptr_link, LEFT); */
+		/* 	ptr_link = &((*ptr_link)->left); */
+		/* } else if ((ptr->left != NULL) && */
+		/* 		(ptr->priority < ptr->left->priority)) { */
+		/* 	__rotate(ptr_link, RIGHT); */
+		/* 	ptr_link = &((*ptr_link)->right); */
+		/* } else { */
+		/* 	// everything is good */
+		/* 	break; */
+		/* } */
 	}
+	if (k >= TREAP_MAX_HEIGHT) {
+		fprintf(stderr, "error: could not fix tree in the bounded number of iterations\n");
+		return -1;
+	}
+	return 0;
 }
 
 int treap_delete(struct treap *t, struct treap_key *key)
 {
+	int ret;
 	struct treap_node *n;
 	struct treap_node **link;
 	__treap_find(t, key, &n, &link);
@@ -353,6 +433,11 @@ int treap_delete(struct treap *t, struct treap_key *key)
 			// sub-tree)
 			struct treap_node **leaf_link = NULL;
 			struct treap_node *leaf = __get_imidiate_succesor(n, &leaf_link);
+			if (leaf == NULL) {
+				// failed to do it in a bounded size
+				return -2;
+			}
+
 			// swap the node with the leaf and then remove the node
 			// .. we know leaf does not have a left, if it does not
 			// have a right then just remove the node. if it has a
@@ -365,11 +450,18 @@ int treap_delete(struct treap *t, struct treap_key *key)
 			// node has been removed and everything is almost okay
 			// except that moving leaf to the nodes position may
 			// have disturbed the heap property
-			__fix_sub_tree_heap_property_down(leaf, link);
+			ret = __fix_sub_tree_heap_property_down(leaf, link);
+			assert(ret == 0);
 		}
 	}
 
 	// return the node to the stack of free nodes :)
 	__treap_free_node(t, n);
 	return 0;
+}
+
+static __always_inline
+uint8_t treap_has_space(struct treap *t)
+{
+	return t->used < TREAP_MAX_SIZE;
 }

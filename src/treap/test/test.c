@@ -9,6 +9,8 @@
 		return false; \
 	}
 
+typedef bool(*test_fn)(void);
+
 bool test_basic(void)
 {
 	int ret;
@@ -16,6 +18,7 @@ bool test_basic(void)
 	struct treap *t = treap_new();
 	ASSERT(t != NULL, "failed to allocate a treap");
 	ASSERT(t->root == NULL, "newly allocated treap has non-NULL value as root pointer");
+	ASSERT(treap_valid(t->root) == 1, "check validity of treap");
 
 	*(uint32_t *)(&K.data) = 123;
 	treap_insert(t, &K, 100);
@@ -25,6 +28,7 @@ bool test_basic(void)
 	ASSERT(root->priority == 100, "priority does not match what we inserted (%d != %d)", root->priority, 100);
 	ASSERT(root->left == NULL, "the left child is not null, we have inserted only one node");
 	ASSERT(root->right == NULL, "the right child is not null, we have inserted only one node");
+	ASSERT(treap_valid(t->root) == 1, "check validity of treap");
 
 	// This node should become the right child of the current
 	*(uint32_t *)(&K.data) = 321;
@@ -35,6 +39,7 @@ bool test_basic(void)
 	ASSERT(right != NULL, "the right child should not be null");
 	ASSERT(right->priority == 50, "wrong priority");
 	ASSERT(treap_key_eq(&right->key, &K), "key did not matched");
+	ASSERT(treap_valid(t->root) == 1, "check validity of treap");
 
 	// This should become the left child of the right child
 	*(uint32_t *)(&K.data) = 200;
@@ -47,6 +52,7 @@ bool test_basic(void)
 	ASSERT(left != NULL, "the child is not set!");
 	ASSERT(left->priority == 38, "the priority value is wrong");
 	ASSERT(treap_key_eq(&left->key, &K), "the key did not match");
+	ASSERT(treap_valid(t->root) == 1, "check validity of treap");
 
 	// This should first become the right child of the right child :)
 	// but then it should cause two left rotations and become the root
@@ -58,9 +64,11 @@ bool test_basic(void)
 	ASSERT(rr->left == root, "the left child should be the old root");
 	ASSERT(rr->right == NULL, "the right child should be null");
 	ASSERT(root->right == right, "The right child should correctly be moved with root after rotations");
+	ASSERT(treap_valid(t->root) == 1, "check validity of treap");
 
 	*(uint32_t *)(&K.data) = 322;
 	treap_insert(t, &K, 37);
+	ASSERT(treap_valid(t->root) == 1, "check validity of treap");
 
 	// check the inorder walk
 	int expected_arr[8];
@@ -78,11 +86,13 @@ bool test_basic(void)
 	*(uint32_t*)(&K.data) = 111;
 	ret = treap_delete(t, &K);
 	ASSERT(ret == -1, "treap_delete should have failed");
+	ASSERT(treap_valid(t->root) == 1, "check validity of treap");
 
 	// test deleting a node (the current root is being removed)
 	*(uint32_t*)(&K.data) = 321;
 	ret = treap_delete(t, &K);
 	ASSERT(ret == 0, "treap_delete failed");
+	ASSERT(treap_valid(t->root) == 1, "check validity of treap");
 
 	treap_report_priority_in_order(t, &arr, &arr_sz);
 	ASSERT(arr_sz == 4, "number of nodes are wrong");
@@ -107,19 +117,47 @@ bool test_basic(void)
 	*(uint32_t*)(&K.data) = 512;
 	ret = treap_delete(t, &K);
 	ASSERT(ret == 0, "treap_delete failed");
+	ASSERT(treap_valid(t->root) == 1, "check validity of treap");
 	*(uint32_t*)(&K.data) = 200;
 	ret = treap_delete(t, &K);
 	ASSERT(ret == 0, "treap_delete failed");
+	ASSERT(treap_valid(t->root) == 1, "check validity of treap");
 	*(uint32_t*)(&K.data) = 123;
 	ret = treap_delete(t, &K);
 	ASSERT(ret == 0, "treap_delete failed");
+	ASSERT(treap_valid(t->root) == 1, "check validity of treap");
 	*(uint32_t*)(&K.data) = 322;
 	ret = treap_delete(t, &K);
 	ASSERT(ret == 0, "treap_delete failed");
+	ASSERT(treap_valid(t->root) == 1, "check validity of treap");
 	ASSERT(t->used == 0, "treap should be empty now");
 
 	treap_destroy(t);
 	return true; // pass
+}
+
+bool test_delete(void)
+{
+	int ret;
+	struct treap_key K = {};
+	struct treap *t = treap_new();
+
+	uint32_t test_keys[] = { 3, 4, 1, 2, };
+	size_t count_test_keys = sizeof(test_keys) / sizeof(test_keys[0]);
+
+	for (int i = 0; i < count_test_keys; i++) {
+		*(uint32_t *)K.data = test_keys[i];
+		treap_insert(t, &K, i+1);
+	}
+	ASSERT(treap_valid(t->root) == 1, "check validity of treap");
+
+	for (int i = 0; i < count_test_keys; i++) {
+		*(uint32_t *)K.data = test_keys[count_test_keys - i - 1];
+		treap_delete(t, &K);
+		ASSERT(treap_valid(t->root) == 1, "check validity of treap (delete: %d)", i);
+	}
+
+	return true;
 }
 
 int main(int argc, char *argv[])
@@ -129,10 +167,14 @@ int main(int argc, char *argv[])
 		"\t\tTESTING\n"
 		"...........................................\n");
 	bool res;
-	res = test_basic();
-	if (!res) {
-		printf("Test failed\n");
-		return -1;
+	test_fn suite[] = {test_basic, test_delete,};
+	const size_t count_tests = sizeof(suite)/sizeof(suite[0]);
+	for (int i = 0; i < count_tests; i++) {
+		res = suite[i]();
+		if (!res) {
+			printf("Test %d failed\n", i+1);
+			return -1;
+		}
 	}
 	printf("Test passed\n");
 	return 0;

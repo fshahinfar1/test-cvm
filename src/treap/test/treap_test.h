@@ -22,23 +22,34 @@ static bool treap_valid(struct treap_node *ptr)
 
 	if (ptr->left != NULL) {
 		// every left child should be strictly smaller than its parent
-		if (!treap_key_less_than(&ptr->left->key, &ptr->key))
+		if (!treap_key_less_than(&ptr->left->key, &ptr->key)) {
+			fprintf(stderr, "%d < %d\n", *(uint32_t *)ptr->left->key.data,
+					*(uint32_t *)ptr->key.data);
 			return false;
+		}
 
 		// parent should have a higher or equal priority
-		if (ptr->priority < ptr->left->priority)
+		if (ptr->priority < ptr->left->priority) {
+			fprintf(stderr, "priority violation (1)\n");
 			return false;
+		}
 	}
 
 	if (ptr->right != NULL) {
 		// every right parent should be less or equal to the right child
 		if (!treap_key_less_than(&ptr->key, &ptr->right->key))
-			if (!treap_key_eq(&ptr->key, &ptr->right->key))
+			if (!treap_key_eq(&ptr->key, &ptr->right->key)) {
+				fprintf(stderr, "%d < %d",
+					*(uint32_t *)ptr->key.data,
+					*(uint32_t *)ptr->right->key.data);
 				return false;
+			}
 
 		// parent should have a higher or equal priority
-		if (ptr->priority < ptr->right->priority)
+		if (ptr->priority < ptr->right->priority) {
+			fprintf(stderr, "priority violation (2)\n");
 			return false;
+		}
 	}
 
 	// found no issue (note: an empty treap is also valid)
